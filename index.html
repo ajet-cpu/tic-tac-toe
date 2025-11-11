@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Tic Tac Toe — Termux</title>
+<style>
+  :root {
+    --bg: #0f1724;
+    --card: #0b1220;
+    --accent: #06b6d4;
+    --muted: #9ca3af;
+    --win: #10b981;
+    --lose: #ef4444;
+  }
+  html,body{height:100%;margin:0;background:linear-gradient(180deg,var(--bg),#071026);font-family:Inter,system-ui,Segoe UI,Roboto,"Helvetica Neue",Arial;}
+  .wrap{min-height:100%;display:flex;align-items:center;justify-content:center;padding:28px;}
+  .card{background:linear-gradient(180deg,rgba(255,255,255,0.02), rgba(255,255,255,0.01));padding:20px;border-radius:14px;box-shadow:0 6px 30px rgba(2,6,23,0.6);width:100%;max-width:520px;color:#e6eef6}
+  h1{margin:0 0 10px 0;font-size:20px;letter-spacing:0.2px}
+  .controls{display:flex;gap:8px;align-items:center;margin-bottom:12px}
+  .btn{background:transparent;border:1px solid rgba(255,255,255,0.06);padding:8px 10px;border-radius:8px;color:var(--muted);font-weight:600;cursor:pointer}
+  .btn.primary{border-color:var(--accent);color:var(--accent)}
+  .status{margin-left:auto;color:var(--muted);font-size:14px}
+  .board{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:8px;background:transparent;margin:8px 0}
+  .cell{background:linear-gradient(180deg,rgba(255,255,255,0.01),rgba(255,255,255,0.015));height:110px;display:flex;align-items:center;justify-content:center;border-radius:10px;font-size:44px;cursor:pointer;user-select:none;-webkit-user-select:none}
+  @media (max-width:420px){ .cell{height:88px;font-size:40px} }
+  .info{display:flex;align-items:center;gap:12px;margin-top:8px;color:var(--muted);font-size:14px}
+  .small{font-size:12px;color:var(--muted)}
+  .highlight{color:var(--accent)}
+  .line{height:4px;background:transparent;border-radius:4px;overflow:hidden;margin-top:12px}
+  .line > div{height:100%;width:0;background:linear-gradient(90deg,var(--accent),#7c3aed);transition:width .35s ease}
+  .result{margin-top:12px;padding:10px;border-radius:8px;background:rgba(255,255,255,0.02);display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .result .msg{font-weight:700}
+  .switch {display:flex;gap:8px;align-items:center}
+  .toggle{background:rgba(255,255,255,0.03);padding:6px 8px;border-radius:8px;border:1px solid rgba(255,255,255,0.02)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card" role="application" aria-label="Tic Tac Toe game">
+    <h1>Tic Tac Toe</h1>
+    <div class="controls" role="toolbar">
+      <button id="btn-reset" class="btn">Reset</button>
+      <button id="btn-new" class="btn primary">New Game</button>
+      <div class="switch">
+        <div class="toggle small">Player: <span id="turn-indicator" class="highlight">X</span></div>
+        <label class="small" style="margin-left:8px">
+          Mode:
+          <select id="mode" class="btn" style="padding:6px;border-radius:8px;">
+            <option value="pvp">2 Players</option>
+            <option value="ai">Vs Computer</option>
+          </select>
+        </label>
+      </div>
+      <div class="status" id="status">Move: X</div>
+    </div>
+
+    <div class="board" id="board" aria-label="game board">
+      <!-- 9 cells inserted by script -->
+    </div>
+
+    <div class="result" id="result" style="display:none">
+      <div class="msg" id="result-msg">Result message</div>
+      <div>
+        <button id="play-again" class="btn primary">Play again</button>
+      </div>
+    </div>
+
+    <div class="info">
+      <div class="small">Tap a cell to play. CPU uses optimal play.</div>
+      <div style="margin-left:auto" class="small">Built for Termux</div>
+    </div>
+
+    <div class="line"><div id="progress"></div></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const boardEl = document.getElementById('board');
+  const statusEl = document.getElementById('status');
+  const turnInd = document.getElementById('turn-indicator');
+  const modeEl = document.getElementById('mode');
+  const resultWrap = document.getElementById('result');
+  const resultMsg = document.getElementById('result-msg');
+  const progressBar = document.getElementById('progress');
+
+  let board = Array(9).fill(null);
+  let current = 'X';
+  let running = true;
+  let mode = modeEl.value; // 'pvp' or 'ai'
+
+  function renderBoard(){
+    boardEl.innerHTML = '';
+    for(let i=0;i<9;i++){
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.dataset.index = i;
+      cell.setAttribute('role','button');
+      cell.setAttribute('aria-label','Cell '+(i+1));
+      cell.textContent = board[i] || '';
+      cell.addEventListener('click', onCellClick);
+      boardEl.appendChild(cell);
+    }
+  }
+
+  function onCellClick(e){
+    const i = Number(e.currentTarget.dataset.index);
+    if(!running || board[i]) return;
+    playMove(i, current);
+    if(running && mode==='ai' && current==='O'){
+      // CPU will play as O (computer always O)
+      setTimeout(aiMove, 150);
+    }
+  }
+
+  function playMove(i, player){
+    if(board[i] || !running) return;
+    board[i] = player;
+    current = player === 'X' ? 'O' : 'X';
+    updateUI();
+    const winner = checkWinner(board);
+    if(winner || board.every(v=>v!==null)){
+      finishGame(winner);
+    } else {
+      statusEl.textContent = 'Move: ' + current;
+      turnInd.textContent = current;
+    }
+  }
+
+  function finishGame(winner){
+    running = false;
+    if(winner === 'draw' || !winner){
+      resultMsg.textContent = "It's a draw.";
+      progressBar.style.width = '100%';
+    } else {
+      resultMsg.textContent = (winner === 'O' ? 'O (Computer)' : winner) + ' wins!';
+      progressBar.style.width = '100%';
+    }
+    resultWrap.style.display = 'flex';
+  }
+
+  function updateUI(){
+    renderBoard();
+    // subtle progress: number of filled cells / 9
+    const filled = board.filter(Boolean).length;
+    progressBar.style.width = ((filled/9)*80 + 10) + '%';
+  }
+
+  function resetBoard(){
+    board = Array(9).fill(null);
+    current = 'X';
+    running = true;
+    resultWrap.style.display = 'none';
+    statusEl.textContent = 'Move: ' + current;
+    turnInd.textContent = current;
+    progressBar.style.width = '5%';
+    renderBoard();
+  }
+
+  function newGame(){
+    resetBoard();
+    mode = modeEl.value;
+    // If vs AI and CPU starts as X? We keep human as X and CPU O. Optionally extend later.
+  }
+
+  // winner detection
+  function checkWinner(b){
+    const lines = [
+      [0,1,2],[3,4,5],[6,7,8],
+      [0,3,6],[1,4,7],[2,5,8],
+      [0,4,8],[2,4,6]
+    ];
+    for(const [a,b1,c] of lines){
+      if(b[a] && b[a] === b[b1] && b[a] === b[c]) return b[a];
+    }
+    if(b.every(v=>v!==null)) return 'draw';
+    return null;
+  }
+
+  // AI logic: minimax (optimal, fast for 3x3)
+  function aiMove(){
+    if(!running) return;
+    // computer = 'O'
+    const best = minimax(board.slice(), 'O');
+    if(best.index !== undefined){
+      playMove(best.index, 'O');
+    }
+  }
+
+  function minimax(newBoard, player){
+    const avail = newBoard.map((v,i)=> v? null : i).filter(x=>x!==null);
+    const winner = checkWinner(newBoard);
+    if(winner === 'X') return {score: -10};
+    if(winner === 'O') return {score: 10};
+    if(avail.length === 0) return {score: 0};
+
+    const moves = [];
+    for(const i of avail){
+      const move = {};
+      move.index = i;
+      newBoard[i] = player;
+      const result = minimax(newBoard, player === 'O' ? 'X' : 'O');
+      move.score = result.score;
+      newBoard[i] = null;
+      moves.push(move);
+    }
+
+    // choose best move for current player
+    let bestMove;
+    if(player === 'O'){
+      let bestScore = -Infinity;
+      for(const m of moves){
+        if(m.score > bestScore){ bestScore = m.score; bestMove = m; }
+      }
+    } else {
+      let bestScore = Infinity;
+      for(const m of moves){
+        if(m.score < bestScore){ bestScore = m.score; bestMove = m; }
+      }
+    }
+    return bestMove;
+  }
+
+  // buttons and controls
+  document.getElementById('btn-reset').addEventListener('click', resetBoard);
+  document.getElementById('btn-new').addEventListener('click', newGame);
+  document.getElementById('play-again').addEventListener('click', newGame);
+  modeEl.addEventListener('change', ()=>{
+    mode = modeEl.value;
+    newGame();
+  });
+
+  // initial render
+  resetBoard();
+})();
+</script>
+</body>
+</html>
